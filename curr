@@ -49,23 +49,29 @@ fun E_INVALID_CODE(code: String): Int =
 fun getApi(key: String): CurrencyApi? = URL(path(key)).openStream().use { Klaxon().parse<CurrencyApi>(it) }
 
 fun main(): Int {
-    if (args.size == 1 && args[0] == "--help") {
+    val args = args.toMutableList()
+    if (args.size == 1 && (args[0] == "--help" || args[0] == "-h")) {
         System.err.println(
             """
-                Usage: curr <from> <to> <amount>
+                Usage: curr [-p/--plain] <from> <to> <amount>
                 Usage: curr --codes
                 Usage: curr --help
+                
+                --plain -p      Plain output mode.
+                --codes -c      Display currency code list.
+                --help -h       Display this help message.
                 
                 Set your https://currencyapi.net/ api key in ${'$'}CURRENCY_API_KEY
             """.trimIndent()
         )
         return 0
     }
-    if (args.size == 1 && args[0] == "--codes") {
+    if (args.size == 1 && (args[0] == "--codes" || args[0] == "-c")) {
         val api = getApi(apiKey ?: return E_NO_API_KEY()) ?: return E_APIERR()
         println((api.rates.keys + api.base).joinToString("\n"))
         return 0
     }
+    var isPlain = args.removeAll { it == "-p" || it == "--plain" }
     if (args.size == 3) {
         val amount: Double = try {
             args[2].toDouble()
@@ -75,7 +81,12 @@ fun main(): Int {
         val api = getApi(apiKey ?: return E_NO_API_KEY()) ?: return E_APIERR()
         if (api.rate(args[0]) == null) return E_INVALID_CODE(args[0])
         if (api.rate(args[1]) == null) return E_INVALID_CODE(args[1])
-        println("$amount ${args[0]} to ${args[1]}: ${api.convert(args[0], amount, args[1])}")
+        val converted = api.convert(args[0], amount, args[1])
+        if (isPlain) {
+            println(converted)
+        } else {
+            println("$amount ${args[0]} to ${args[1]}: $converted")
+        }
         return 0
     }
     return E_UNKNOWN_USAGE()
