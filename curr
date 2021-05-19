@@ -1,0 +1,84 @@
+#!/usr/bin/env kscript
+@file:DependsOnMaven("com.beust:klaxon:5.5")
+
+import com.beust.klaxon.Klaxon
+import java.net.URL
+import kotlin.system.exitProcess
+
+fun path(key: String) = "https://currencyapi.net/api/v1/rates?key=$key&base=USD"
+
+data class CurrencyApi(
+    var valid: Boolean = false,
+    var base: String = "",
+    var rates: Map<String, Double> = mapOf()
+) {
+    fun fromBase(amount: Double, currencyCode: String): Double? = rate(currencyCode)?.let { amount * it }
+    fun toBase(amount: Double, currencyCode: String): Double? = rate(currencyCode)?.let { amount / it }
+
+    fun convert(from: String, amount: Double, to: String): Double? =
+        toBase(amount, from)?.let { fromBase(it, to) }
+
+
+    fun rate(currencyCode: String): Double? =
+        currencyCode.toUpperCase().let { return@let if (currencyCode == base) 1.0 else rates[currencyCode] }
+
+}
+
+val apiKey: String? = System.getenv("CURRENCY_API_KEY")
+
+fun E(text: String): Int {
+    System.err.println("curr: $text")
+    return 1
+}
+
+fun E_UNKNOWN_USAGE(): Int =
+    E("Unknown usage. See curr --help")
+
+fun E_NO_API_KEY(): Int =
+    E("Missing currency api key. Get one at https://currencyapi.net/ and set in \$CURRENCY_API_KEY")
+
+fun E_APIERR(): Int =
+    E("Failed to parse currency api response. This might be a rate limit.")
+
+fun E_INVALID_AMOUNT(): Int =
+    E("Invalid amount. See curr --help")
+
+fun E_INVALID_CODE(code: String): Int =
+    E("Invalid code: $code. See curr --codes")
+
+fun getApi(key: String): CurrencyApi? = URL(path(key)).openStream().use { Klaxon().parse<CurrencyApi>(it) }
+
+fun main(): Int {
+    if (args.size == 1 && args[0] == "--help") {
+        System.err.println(
+            """
+                Usage: curr <from> <to> <amount>
+                Usage: curr --codes
+                Usage: curr --help
+                
+                Set your https://currencyapi.net/ api key in ${'$'}CURRENCY_API_KEY
+            """.trimIndent()
+        )
+        return 0
+    }
+    if (args.size == 1 && args[0] == "--codes") {
+        val api = getApi(apiKey ?: return E_NO_API_KEY()) ?: return E_APIERR()
+        println((api.rates.keys + api.base).joinToString("\n"))
+        return 0
+    }
+    if (args.size == 3) {
+        val amount: Double = try {
+            args[2].toDouble()
+        } catch (e: NumberFormatException) {
+            return E_INVALID_AMOUNT()
+        }
+        val api = getApi(apiKey ?: return E_NO_API_KEY()) ?: return E_APIERR()
+        if (api.rate(args[0]) == null) return E_INVALID_CODE(args[0])
+        if (api.rate(args[1]) == null) return E_INVALID_CODE(args[1])
+        println("$amount ${args[0]} to ${args[1]}: ${api.convert(args[0], amount, args[1])}")
+        return 0
+    }
+    return E_UNKNOWN_USAGE()
+}
+
+exitProcess(main())
